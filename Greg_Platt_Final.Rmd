@@ -1,0 +1,128 @@
+---
+title: "Time Series Final Project"
+author: "Greg Platt"
+date: "April 28, 2019"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Data Source Selected
+
+I opted to use the Econ5 Data (econ5)
+
+This data examines several key quarterly US economic metrics over a period of 40 years. I opted to treat private investment as the dependant variable of the data set. The actual data isn't clear if it is, but as is discovered below, there do a strong job of predicting its behavior. I am also personally interested in these metrics as they apply to my work in predicting work volumes for my employer as they relate to macro economic variables, so this work is immediately reusable. For privacy reasons, I opted not to include the work volumes in my submitted version of the assignment.  
+
+```{r}
+library(astsa)
+data = astsa::econ5
+time_series = ts(data, start = 1948.5, frequency = 4)
+
+
+```
+
+## Summary Statistics
+
+The units for each variable are different, but for the predicted variable 'prinv'. The measurement units are not identifed but seem to be in billions of dollars. 
+
+Below, several summarized statistics for the data are provided.
+
+```{r}
+summary(data)
+max(data$prinv)
+min(data$prinv)
+mean(data$prinv)
+sd(data$prinv)
+
+
+start(time_series)
+end(time_series)
+frequency(time_series)
+```
+
+## Data Exploration
+
+The boxplots suggest that private investment doesn't vary significantly on a quarterly basis, which makes sense as the driving econimic metrics tend to be persistant without demonstrating much seasonal variation. In recent years, unemployment has typically dropped in Q4 due to holiday hiring, but this trend does not seem to exist during the time frame of this data, or if it does, its temporary nature doesn't impact private investment.
+
+The second chart demonstrates how private investment trends over the course of the data. You will observe a positive movement over time.
+
+To detrend the data, we first take the log of the series, in order to help reduce the variance over time. Then, a lag 4 difference is applied, to correct for any slight quarterly trend which may exist. Last, we take that differenced data and arrive at an approximately stationary dataset. 
+
+
+```{r}
+
+boxplot(time_series[,'prinv']~cycle(time_series[,'prinv']))
+
+
+plot(time_series[,'prinv'])
+abline(reg=lm(time_series[,'prinv']~time(time_series[,'prinv']))) 
+
+
+log_data <- log(time_series)
+plot(log_data)
+
+
+x <- diff(log_data, lag = 4)
+plot(x)
+
+y <- diff(x)
+plot(y)
+
+```
+## Data Decomposition
+
+The decomposition of the model suggests an additive trend, that does exhibit a minor cyclical seasonal pattern. The data also exhibits a fair amount of randomness during the latter portion of the time series. 
+
+```{r}
+
+decompose(time_series[,'prinv'])
+plot(decompose(time_series[,'prinv']))
+```
+## Regression
+
+For linear regression, I first tested a model using all variables, while it had an extremely high adj. r-squared value, the summary indicated that the consumption variable didn't add value to the model. A second with that variable removed showed a near identical adj r-squared, and also had improved AIC and BIC values indicating that it was a more useful model.
+
+This data suggests that using unemployment, gnp, and government investment is an effective way to approximate private market investment. There exists a positive correlation with GNP, while the correlations with GNP and government spending are negative. 
+
+``` {r}
+linearMod <- lm(prinv ~ unemp + gnp + consum + govinv, data=time_series)
+summary(linearMod)
+
+linearMod2 <- lm(prinv ~ unemp + gnp + govinv, data=time_series)
+summary(linearMod2)
+
+
+AIC(linearMod)
+BIC(linearMod)
+
+AIC(linearMod2)
+BIC(linearMod2)
+```
+## ARMA Modeling
+
+The ACF and PACF plots suggest that the ACF trails off and the PACF cuts off after 1 lag. This would suggest some an AR model is best, likely an AR(1)
+
+
+```{r}
+
+acf2(time_series[,'prinv'])
+
+```
+
+## Model Diagnostics
+
+After trying several different ARIMA models, it appears that an AR(2) does the best job of fitting the data. The AR(1) suggested from the plots above left a few ACF residuals above the threshold and p values were all below 0 in the Ljung-Box. A change to AR(2) corrected all of these. The ARMA(1,1) also fit well, but overall the statistics suggest that the AR(2) is a better choice for this data. 
+
+``` {r}
+is_ar_model <- sarima(time_series[,'prinv'],2,0,0)
+
+is_ma_model <- sarima(time_series[,'prinv'],0,0,1)
+
+is_arma_model <- sarima(time_series[,'prinv'],1,0,1)
+```
